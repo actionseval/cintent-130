@@ -1,0 +1,89 @@
+name: Tests
+
+# CINTENT >> MANUAL TRIGGER
+# on:
+#   push:
+#     branches:
+#       - master
+#   pull_request:
+on: [repository_dispatch, workflow_dispatch]
+
+env:
+  COVERALLS_PARALLEL: true
+  PURE: 1
+  BATCHED: 0
+  LOGGING: info
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      SYMPY_USE_CACHE: "no"
+      OPTIONS: ${{ matrix.options }}
+      BATCHED: ${{ matrix.batched }}
+      TF_DEPENDENCIES: "tensorflow|tensorboard"
+
+    strategy:
+      matrix:
+        include:
+            - {BATCHED: 0, OPTIONS: "frontend or apps or api or gaussian"}
+
+            # CINTENT >> REMOVE_MATRIX
+            # - {BATCHED: 0, OPTIONS: "fock"}
+            # - {BATCHED: 0, OPTIONS: "tf"}
+            # - {BATCHED: 1, OPTIONS: "tf and pure"}
+            # - {BATCHED: 1, OPTIONS: "tf and mixed"}
+            # - {BATCHED: 0, OPTIONS: "bosonic"}
+            # - {BATCHED: 0, OPTIONS: "not tf"}
+    steps:
+      # CINTENT >> NEED_API_KEY
+      # - name: Cancel Previous Runs
+      #   uses: styfle/cancel-workflow-action@0.4.1
+      #   with:
+      #     access_token: ${{ github.token }}
+
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      # CINTENT >> INSERT_CINTENT
+      - uses: JavidDitty/setup-cintent@a606c80c34ec190c6a20dea33d6d58ddb6c4e0cc
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: |
+          [ "$OPTIONS" = "not tf" ] && gawk -i inplace '!/('$TF_DEPENDENCIES')/' requirements-ci.txt
+          python3 -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+          pip install wheel codecov pytest pytest-cov pytest-randomly pytest-mock pytest-logger --upgrade
+
+      - name: Install Strawberry Fields
+        run: |
+          pip install -r requirements-ci.txt
+          python3 setup.py bdist_wheel
+          pip install dist/StrawberryFields*.whl
+
+      - name: Run tests
+        run: python3 -m pytest tests --cov=strawberryfields --cov-report=term-missing --cov-report=xml -p no:warnings --randomly-seed=42 --tb=native -m "$OPTIONS"
+      
+      - name: Adjust coverage file for Codecov
+        run: bash <(sed -i 's/filename=\"/filename=\"strawberryfields\//g' coverage.xml)
+
+      # CINTENT >> REMOVE_UPLOADS
+      # - name: Upload coverage to Codecov
+      #   uses: codecov/codecov-action@v1
+      #   with:
+      #     file: ./coverage.xml
+
+      # CINTENT >> INSERT_CINTENT
+      - name: Upload CIntent Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.CINTENT_ARTIFACT_NAME }}
+          path: ${{ env.CINTENT_LOGS }}
